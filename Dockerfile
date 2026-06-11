@@ -2,7 +2,7 @@
 # Copyright 2019-2021 Florida International University
 # SPDX-License-Identifier: MIT
 
-FROM alpine:latest
+FROM alpine:3.23.3
 
 ENV CC="clang"
 ENV CXX="clang++"
