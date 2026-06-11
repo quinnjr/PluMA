@@ -238,11 +238,21 @@ def _strip_lto_flags(env):
 
 
 def _remove_annobin_flag(env):
-    """Remove Fedora/RHEL annobin flag if present."""
-    annobin_flag = "-specs=/usr/lib/rpm/redhat/redhat-annobin-cc1"
-    ccflags = env.get("CCFLAGS", [])
-    if annobin_flag in ccflags:
-        ccflags.remove(annobin_flag)
+    """Strip Fedora/RHEL hardening specs injected via perl ccopts / python config.
+
+    Why: `-specs=...redhat-annobin-cc1` makes gcc load gcc-annobin.so, a plugin
+    that is version-locked to the compiler it was built for. Under a gcc-toolset
+    / devtoolset mismatch (e.g. plugin built for gcc 8.5.0 but compiling with gcc
+    9.5.0) cc1plus aborts with "fail to initialize plugin gcc-annobin.so". The
+    spec can land in any compile-flag list depending on which config injected it,
+    so filter them all rather than CCFLAGS alone.
+    """
+    specs = ("redhat-annobin-cc1", "redhat-hardened-cc1")
+    for key in ("CCFLAGS", "CXXFLAGS", "SHCCFLAGS", "SHCXXFLAGS", "CPPFLAGS"):
+        flags = env.get(key)
+        if not flags:
+            continue
+        env[key] = [f for f in flags if not any(s in str(f) for s in specs)]
 
 
 AddOption(
