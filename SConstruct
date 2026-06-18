@@ -247,8 +247,8 @@ def _remove_annobin_flag(env):
     spec can land in any compile-flag list depending on which config injected it,
     so filter them all rather than CCFLAGS alone.
     """
-    specs = ("redhat-annobin-cc1", "redhat-hardened-cc1")
-    for key in ("CCFLAGS", "CXXFLAGS", "SHCCFLAGS", "SHCXXFLAGS", "CPPFLAGS"):
+    specs = ("redhat-annobin-cc1", "redhat-hardened-cc1", "redhat-hardened-ld")
+    for key in ("CCFLAGS", "CXXFLAGS", "SHCCFLAGS", "SHCXXFLAGS", "CPPFLAGS", "LINKFLAGS", "SHLINKFLAGS"):
         flags = env.get(key)
         if not flags:
             continue
@@ -794,6 +794,13 @@ def run_configuration(env):
     java_enabled = configure_java(config)
 
     config.Finish()
+
+    # Strip annobin/hardened specs again — ParseConfig calls during
+    # configure_perl / configure_python / configure_r may have
+    # re-injected them after the initial strip in create_base_environment.
+    _remove_annobin_flag(env)
+    _strip_lto_flags(env)
+
     env["JAVA_ENABLED"] = java_enabled
     env["JULIA_ENABLED"] = julia_enabled
     return env
