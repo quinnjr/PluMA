@@ -8,6 +8,8 @@ Rplots.pdf
 ####
 # PluMA specific ignores
 ####
+.worktrees/
+fuzz/corpus/
 pluma
 PluGen/plugen
 *_wrap.cxx
@@ -28,6 +30,7 @@ plugins/
 logs/*
 PyPluMA.py
 models.txt
+requirements-plugins.txt
 
 # Created by https://www.toptal.com/developers/gitignore/api/c++,r,python,cuda
 # Edit at https://www.toptal.com/developers/gitignore?templates=c++,r,python,cuda

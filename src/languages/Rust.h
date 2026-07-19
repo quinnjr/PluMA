@@ -28,39 +28,50 @@
        For information regarding this software, please contact lead architect
                     Trevor Cickovski at tcickovs@fiu.edu
 
-\********************************************************************************/
+\*********************************************************************************/
 
-#ifndef LANGUAGE_H
-#define LANGUAGE_H
+#ifndef RUST_H
+#define RUST_H
 
-#include <string>
+#include "Language.h"
 #include <map>
-#include "../platform.h"
+#include <string>
 
-#if PLUMA_PLATFORM_WINDOWS
-    // Use platform.h glob_t emulation
-    using pluma::platform::glob_t;
-#else
-    #include <glob.h>
+#ifdef HAVE_RUST
+
+// Function pointer types for Rust plugin FFI
+// These match the C ABI exports from Rust plugins using pluma-plugin-trait
+typedef void* (*rust_plugin_create_fn)();
+typedef void (*rust_plugin_destroy_fn)(void*);
+typedef void (*rust_plugin_input_fn)(void*, const char*);
+typedef void (*rust_plugin_run_fn)(void*);
+typedef void (*rust_plugin_output_fn)(void*, const char*);
+
+// Structure to hold Rust plugin function pointers
+struct RustPluginVTable {
+    rust_plugin_create_fn create;
+    rust_plugin_destroy_fn destroy;
+    rust_plugin_input_fn input;
+    rust_plugin_run_fn run;
+    rust_plugin_output_fn output;
+    void* handle;  // dlopen handle for cleanup
+};
+
 #endif
 
-class Language {
+class Rust : public Language {
 public:
-    Language(std::string lang, std::string ext, std::string pp, std::string pre="") {language = lang; extension = ext; pluginpath = pp; prefix = pre;}
-    virtual ~Language() {}
-    virtual void loadPlugin(std::string path, glob_t* globbuf, std::map<std::string, std::string>* pluginLanguages, bool list);
-    virtual void executePlugin(std::string pluginname, std::string inputfile, std::string outputfile)=0;
-    virtual void unload()=0;
-    virtual std::string ext() {return extension;}
-    virtual std::string lang() {return language;}
-    virtual std::string pre() {return prefix;}
-    virtual void load()=0;
+    Rust(std::string language, std::string ext, std::string pp);
+    void loadPlugin(std::string path, glob_t* globbuf, std::map<std::string, std::string>* pluginLanguages, bool list);
+    void executePlugin(std::string pluginname, std::string inputname, std::string outputname);
+    void unload();
+    void load() {}
 
-protected:
-    std::string language;
-    std::string extension;
-    std::string prefix;
-    std::string pluginpath;
+private:
+#ifdef HAVE_RUST
+    std::map<std::string, RustPluginVTable> loadedPlugins;
+    RustPluginVTable loadRustPlugin(const std::string& path, const std::string& pluginname);
+#endif
 };
 
 #endif

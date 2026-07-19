@@ -34,6 +34,7 @@
 #define COMPILED_H
 
 #include "Language.h"
+#include "../platform.h"
 #include <string>
 #include <map>
 #include <mutex>
@@ -47,7 +48,7 @@ public:
     virtual void load(){}
 
 private:
-    std::map<std::string, void*> openHandles;
+    std::map<std::string, pluma::platform::LibraryHandle> openHandles;
     std::mutex openHandlesMutex;
 };
 

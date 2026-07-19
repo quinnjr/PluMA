@@ -28,39 +28,27 @@
        For information regarding this software, please contact lead architect
                     Trevor Cickovski at tcickovs@fiu.edu
 
-\********************************************************************************/
+\*********************************************************************************/
 
-#ifndef LANGUAGE_H
-#define LANGUAGE_H
+#ifndef RUSTPLUGINGENERATOR_H
+#define RUSTPLUGINGENERATOR_H
 
 #include <string>
-#include <map>
-#include "../platform.h"
+#include <vector>
 
-#if PLUMA_PLATFORM_WINDOWS
-    // Use platform.h glob_t emulation
-    using pluma::platform::glob_t;
-#else
-    #include <glob.h>
-#endif
-
-class Language {
+class RustPluginGenerator {
 public:
-    Language(std::string lang, std::string ext, std::string pp, std::string pre="") {language = lang; extension = ext; pluginpath = pp; prefix = pre;}
-    virtual ~Language() {}
-    virtual void loadPlugin(std::string path, glob_t* globbuf, std::map<std::string, std::string>* pluginLanguages, bool list);
-    virtual void executePlugin(std::string pluginname, std::string inputfile, std::string outputfile)=0;
-    virtual void unload()=0;
-    virtual std::string ext() {return extension;}
-    virtual std::string lang() {return language;}
-    virtual std::string pre() {return prefix;}
-    virtual void load()=0;
+    RustPluginGenerator(std::string path, bool literal);
+    void generate(std::string pluginname, std::vector<std::string>& command);
 
-protected:
-    std::string language;
-    std::string extension;
-    std::string prefix;
-    std::string pluginpath;
+private:
+    void makeDirectory(std::string pluginname);
+    void makeCargoToml(std::string pluginname);
+    void makeSourceFile(std::string pluginname, std::vector<std::string>& command);
+    void makeReadme(std::string pluginname, std::vector<std::string>& command);
+
+    std::string myPath;
+    bool myLiteral;
 };
 
 #endif

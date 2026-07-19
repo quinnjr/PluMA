@@ -28,13 +28,14 @@
        For information regarding this software, please contact lead architect
                     Trevor Cickovski at tcickovs@fiu.edu
 
-\*********************************************************************************/
+\********************************************************************************/
 
 #include "Compiled.h"
 #include "../PluginManager.h"
-#include <dlfcn.h>
+#include "../platform.h"
 #include <iostream>
 #include <memory>
+#include <fstream>
 
 Compiled::Compiled(
     std::string lang,
@@ -49,29 +50,33 @@ void Compiled::executePlugin(
     std::string outputname)
 {
     std::string tmppath = pluginpath;
-    std::string path = tmppath.substr(0, pluginpath.find_first_of(":"));
+    std::string path = tmppath.substr(0, pluginpath.find_first_of(PLUMA_PATH_LIST_SEPARATOR));
     std::ifstream* infile = NULL;
     std::string filename;
     do {
         if (infile) delete infile;
-        filename = path+"/"+pluginname+"/lib"+pluginname+"Plugin."+ext();//so";
+        filename = path + PLUMA_PATH_SEPARATOR + pluginname + PLUMA_PATH_SEPARATOR + 
+                   PLUMA_SHARED_LIB_PREFIX + pluginname + "Plugin" + PLUMA_SHARED_LIB_EXT;
         infile = new std::ifstream(filename.c_str(), std::ios::in);
-        tmppath = tmppath.substr(tmppath.find_first_of(":")+1, tmppath.length());
-        path = tmppath.substr(0, tmppath.find_first_of(":"));
-    } while (!(*infile) && path.length() > 0);// {
+        tmppath = tmppath.substr(tmppath.find_first_of(PLUMA_PATH_LIST_SEPARATOR)+1, tmppath.length());
+        path = tmppath.substr(0, tmppath.find_first_of(PLUMA_PATH_LIST_SEPARATOR));
+    } while (!(*infile) && path.length() > 0);
+
     delete infile;
-    // Dynamic load takes place here
-    void* handle = NULL;
+
+    // Dynamic load takes place here, cached across calls (and dlclose()'d
+    // in unload()) so repeat invocations of the same plugin don't reopen it.
+    pluma::platform::LibraryHandle handle = NULL;
     {
         std::lock_guard<std::mutex> lock(openHandlesMutex);
-        std::map<std::string, void*>::iterator handleIt = openHandles.find(filename);
+        std::map<std::string, pluma::platform::LibraryHandle>::iterator handleIt = openHandles.find(filename);
         if (handleIt != openHandles.end()) {
             handle = handleIt->second;
         } else {
-            handle = dlopen(filename.c_str(), RTLD_LAZY | RTLD_GLOBAL);
+            handle = pluma::platform::loadLibrary(filename);
             if (!handle) {
                 std::cout << "Warning: Null Handle" << std::endl;
-                std::cout << dlerror() << std::endl;
+                std::cout << pluma::platform::getLibraryError() << std::endl;
             } else {
                 openHandles[filename] = handle;
             }
@@ -94,8 +99,8 @@ void Compiled::executePlugin(
 
 void Compiled::unload() {
     std::lock_guard<std::mutex> lock(openHandlesMutex);
-    for (std::map<std::string, void*>::iterator it = openHandles.begin(); it != openHandles.end(); ++it) {
-        dlclose(it->second);
+    for (std::map<std::string, pluma::platform::LibraryHandle>::iterator it = openHandles.begin(); it != openHandles.end(); ++it) {
+        pluma::platform::unloadLibrary(it->second);
     }
     openHandles.clear();
 }
