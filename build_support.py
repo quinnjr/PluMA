@@ -5,7 +5,6 @@
 import os
 import subprocess
 from os import path
-from subprocess import PIPE, Popen
 import sys
 
 def _python_version():
@@ -45,11 +44,6 @@ def LibPath(*args):
     for p in args:
         res.append(path.abspath("./lib/" + p))
     return res
-
-
-def cmdline(command):
-    process = Popen(args=command, stdout=PIPE, shell=True)
-    return process.communicate()[0].decode("utf8")
 
 
 def CheckPerl(ctx):

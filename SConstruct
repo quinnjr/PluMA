@@ -148,6 +148,8 @@ env = Environment(
     SHLIBPREFIX=""
 )
 
+env.CacheDir(os.path.join(os.getcwd(), '.scons_cache'))
+
 if not sys.platform.startswith("darwin"):
     env.Append(LINKFLAGS=["-rdynamic"])
     env.Append(LIBS=["rt"])
@@ -392,7 +394,6 @@ else:
                 if (libjvm_env):
                     libjvm_path = libjvm_env
                 if os.path.isfile(libjvm_path):
-                    config.env.AppendUnique(LIBPATH=[Dir("/usr/lib/jvm/java-1.8.0-openjdk-1.8.0.472.b08-1.el8_10.x86_64/jre/lib/amd64/server/")])
                     config.env.Append(LIBS=["jvm"])
                     config.env.Append(CPPDEFINES=["HAVE_JAVA"])
                     java_enabled = True
@@ -573,7 +574,19 @@ else:
         LIBPATH=[LibPath(""),]
     )
 
-    languages = Glob("src/languages/*.cxx")
+    languages = Glob("src/languages/Language.cxx") + Glob("src/languages/Compiled.cxx")
+
+    if not env.GetOption("without-python"):
+        languages += Glob("src/languages/Py.cxx")
+
+    if not env.GetOption("without-perl"):
+        languages += Glob("src/languages/Perl.cxx")
+
+    if not env.GetOption("without-r"):
+        languages += Glob("src/languages/R.cxx")
+
+    if java_enabled:
+        languages += Glob("src/languages/Java.cxx")
 
     for language in languages:
         output = language.get_path().replace("src", "obj").replace(".cxx", ".os")
@@ -598,8 +611,6 @@ else:
                 target=output
             )
 
-    plugenFiles = Glob(str(SourcePath("PluGen/*.cxx")))
-
     env.Program("PluGen/plugen", Glob("src/PluGen/*.cxx"))
 
     sourceFiles = Glob("src/*.cxx")
@@ -610,12 +621,15 @@ else:
         "dl",
         "crypt",
         "c",
-        "python" + python_version,
-        "util",
-        "perl",
-        "R",
-        "RInside",
     ]
+    if not env.GetOption("without-python"):
+        program_libs.append("python" + python_version)
+        program_libs.append("util")
+    if not env.GetOption("without-perl"):
+        program_libs.append("perl")
+    if not env.GetOption("without-r"):
+        program_libs.append("R")
+        program_libs.append("RInside")
     if java_enabled:
         program_libs.append("jvm")
 

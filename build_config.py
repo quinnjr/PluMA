@@ -3,14 +3,19 @@
 # SPDX-License-Identifier: MIT
 
 import os
-import subprocess
 import sys
 from os.path import abspath, relpath
 
 platform = sys.platform
-platform_id = subprocess.check_output(
-    "cat /etc/os-release | egrep '^ID='", shell=True
-)
+platform_id = None
+try:
+    with open("/etc/os-release") as f:
+        for line in f:
+            if line.startswith("ID="):
+                platform_id = line.strip().split("=", 1)[1].strip('"')
+                break
+except FileNotFoundError:
+    pass
 
 lib_search_path = ["/lib", "/usr/lib", "/usr/local/lib"]
 include_search_path = ["/usr/include", "/usr/local/include", relpath("./src")]

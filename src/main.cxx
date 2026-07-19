@@ -36,12 +36,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "Plugin.h"
-//#include "PluginManager.h"
 #include "PluginProxy.h"
-/*#include "languages/Compiled.h"
-#include "languages/Py.h"
-#include "languages/R.h"
-#include "languages/Perl.h"*/
 #include <string>
 #include <map>
 #include <vector>
@@ -50,8 +45,15 @@
 #include <ctime>
 #include <pthread.h>
 #include <thread>
+#include <atomic>
 using std::thread;
 using std::vector;
+
+// Set by any readConfig() invocation (main thread or a LitterLaunch worker
+// thread) when a plugin throws. Using a flag instead of calling exit()
+// directly from a background thread lets sibling threads finish (or fail on
+// their own terms) before the process actually terminates.
+static std::atomic<bool> pipelineFailed(false);
 
 //////////////////////////////////////////
 // Helper Function: Convert int to string
@@ -63,12 +65,6 @@ std::string toString(int val) {
    return retval;
 }
 //////////////////////////////////////////
-struct args {
-   char* myFile;
-   char* myPrefix;
-   bool* myDoRestart;
-   char* myRestartPoint;
-};
 
 //void readConfig(void* pars) {
 //void readConfig(void* infilep, void* pref, void* doR, void* rP) {
@@ -86,7 +82,7 @@ void readConfig(std::string inputfile, std::string prefix, bool doRestart, std::
     std::string pipeline = "";
     std::string oldprefix = prefix;
     std::string kitty = "";
-    bool parallelflag, kittyflag;
+    bool parallelflag = false, kittyflag = false;
     vector<std::thread> threads;
     //vector<args*> argsvec;
     while (!infile.eof()) {
@@ -160,6 +156,15 @@ void readConfig(std::string inputfile, std::string prefix, bool doRestart, std::
 	    }
 	    parallelflag = false;
 	    kittyflag = false;
+            // All LitterLaunch sibling threads for this Kitty group have now
+            // either completed or hit a plugin failure and set pipelineFailed
+            // (via a clean return, not exit()). It is now safe to stop this
+            // pipeline level; the actual process exit(1) happens once the
+            // top-level readConfig() call in main() returns, by which point
+            // every thread at every nesting level has been joined.
+            if (pipelineFailed) {
+                return;
+            }
         } else {
             infile >> name >> junk >> inputname >> junk >> outputname;
         }
@@ -189,8 +194,11 @@ void readConfig(std::string inputfile, std::string prefix, bool doRestart, std::
         PluginManager::getInstance().log("Creating plugin "+name);
         try {
             bool executed = false;
+            std::string pluginKey = name+"Plugin";
+            std::map<std::string, std::string>::iterator langIt = PluginManager::getInstance().pluginLanguages.find(pluginKey);
+            std::string pluginLang = (langIt != PluginManager::getInstance().pluginLanguages.end()) ? langIt->second : "";
             for (int i = 0; i < PluginManager::supported.size() && !executed; i++) {
-                if (PluginManager::getInstance().pluginLanguages[name+"Plugin"] == PluginManager::supported[i]->lang()) {
+                if (pluginLang == PluginManager::supported[i]->lang()) {
                     std::cout << "[PluMA] Running Plugin: " << name << std::endl;
                     PluginManager::supported[i]->executePlugin(name, inputname, outputname);
                     executed = true;
@@ -200,6 +208,7 @@ void readConfig(std::string inputfile, std::string prefix, bool doRestart, std::
             // In this case we found the plugin, but the language is not PluginManager::supported.
             if (!executed && name != "") {
                 PluginManager::getInstance().log("Error, no suitable language for plugin: "+name+".");
+                exit(1);
             }
             ///////////////////////////////////////////////////////////////////////////////////////////////////////
         }
@@ -207,12 +216,20 @@ void readConfig(std::string inputfile, std::string prefix, bool doRestart, std::
         // This hits if the plugin errored while running it
         // Message(s) will be output to the logfile, and output files will be removed.
         catch (...) {
-            PluginManager::getInstance().log("ERROR IN PLUGIN: "+name+".");;
+            PluginManager::getInstance().log("ERROR IN PLUGIN: "+name+".");
             if (access( outputname.c_str(), F_OK ) != -1 ) {
                 PluginManager::getInstance().log("REMOVING OUTPUT FILE: "+outputname+".");
                 system(("rm "+outputname).c_str());
-                exit(1);
             }
+            // Do NOT call exit() here: this may be running on a LitterLaunch
+            // worker thread, and exit() from a background thread would tear
+            // down the whole process (including sibling threads still
+            // mid-write on their own output files) with no chance to finish.
+            // Instead, flag the failure and unwind this readConfig() call
+            // cleanly; the owning thread's join (LitterGather, below) or
+            // main() will observe the flag and terminate once it is safe.
+            pipelineFailed = true;
+            return;
         }
       //PluginManager::languageUnload("R");
       //PluginManager::languageLoad("R");
@@ -261,20 +278,6 @@ int main(int argc, char** argv)
     //pluginpath += "/usr/local/bin/plugins/:/usr/bin/plugins/";
     //pluginpath += ":";
     //std::cout << "PluginPath: " << pluginpath << std::endl;
-    ///////////////////////////////////////////////////////////////////////////////////////////////
-
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    // Set PluginManager::supported languages here.
-    /*std::vector<Language*> PluginManager::supported;
-    std::map<std::string, std::string> PluginManager::getInstance().pluginLanguages;
-    #ifdef APPLE
-    PluginManager::supported.push_back(new Compiled("C", "dylib", pluginpath, "lib"));
-    #else
-    PluginManager::supported.push_back(new Compiled("C", "so", pluginpath, "lib"));
-    #endif
-    PluginManager::supported.push_back(new Py("Python", "py", pluginpath));
-    PluginManager::supported.push_back(new MiAMi::R("R", "R", pluginpath, argc, argv));
-    PluginManager::supported.push_back(new Perl("Perl", "pl", pluginpath));*/
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -351,66 +354,16 @@ int main(int argc, char** argv)
     //delete myArgs;
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-   /*std::ifstream infile(argv[1], std::ios::in);
-   bool restartFlag = false;
-   std::string prefix = "";
-   while (!infile.eof()) {
-      ///////////////////////////////////////////////////////
-      // Read one line
-      // Plugin (Name) inputfile (input file) outputfile (output file)
-      std::string junk, name, inputname, outputname;
-      infile >> junk;
-      if (junk[0] == '#') {getline(infile, junk); continue;} // comment
-      else if (junk == "Prefix") {infile >> prefix; prefix += "/"; continue;} // prefix
-      else infile >> name >> junk >> inputname >> junk >> outputname;
-      if (inputname[0] != '/')
-         inputname = prefix + inputname;
-      if (outputname[0] != '/')
-         outputname = prefix + outputname;
-      //////////////////////////////////////////////////////
-
-      ////////////////////////////////////////////////////////////////////////////
-      // If we are restarting and have not hit that point yet, skip this plugin
-      if (doRestart && !restartFlag)
-         if (name == restartPoint)
-            restartFlag = true;
-         else
-           continue;
-      /////////////////////////////////////////////////////////////////////
-
-      ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-      // Try to create and run all three steps of the plugin in the appropriate language
-      PluginManager::getInstance().log("Creating plugin "+name);
-      try {
-         bool executed = false;
-         for (int i = 0; i < PluginManager::supported.size() && !executed; i++)
-            if (PluginManager::getInstance().pluginLanguages[name+"Plugin"] == PluginManager::supported[i]->lang()) {
-               std::cout << "[PluMA] Running Plugin: " << name << std::endl;
-               PluginManager::supported[i]->executePlugin(name, inputname, outputname);
-               executed = true;
-            }
-         ///////////////////////////////////////////////////////////////////////////////////////////////////////
-         // In this case we found the plugin, but the language is not PluginManager::supported.
-         if (!executed && name != "")
-             PluginManager::getInstance().log("Error, no suitable language for plugin: "+name+".");
-         ///////////////////////////////////////////////////////////////////////////////////////////////////////
-      }
-      ///////////////////////////////////////////////////////////////////////////////////////////////////////
-      // This hits if the plugin errored while running it
-      // Message(s) will be output to the logfile, and output files will be removed.
-      catch (...) {
-         PluginManager::getInstance().log("ERROR IN PLUGIN: "+name+".");;
-         if (access( outputname.c_str(), F_OK ) != -1 ) {
-            PluginManager::getInstance().log("REMOVING OUTPUT FILE: "+outputname+".");
-            system(("rm "+outputname).c_str());
-            exit(1);
-	    }
-      }
-      std::cout << "HERE" << std::endl;
-      ////////////////////////////////////////////////////////////////////////////////////////////////////////
-   }*/
-   ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    /////////////////////////////////////////////////////////////////////
+    // The top-level readConfig() call above only returns once every
+    // recursive Pipeline invocation and every LitterLaunch/LitterGather
+    // thread group (at every nesting level) has completed or joined. Only
+    // now is it safe to actually terminate the process if any plugin along
+    // the way failed.
+    if (pipelineFailed) {
+        exit(1);
+    }
+    /////////////////////////////////////////////////////////////////////
 
     /////////////////////////////////////////////////////////////////////
     // Cleanup.

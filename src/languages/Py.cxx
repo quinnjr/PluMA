@@ -48,8 +48,8 @@ void Py::executePlugin(
     std::string outputname
 ) {
 #ifdef HAVE_PYTHON
-    char* buffer = new char[100];
-    std::string cwd = getcwd(buffer, 100);
+    char buffer[100];
+    std::string cwd = getcwd(buffer, sizeof(buffer));
     if (!Py_IsInitialized()) Py_Initialize();
 
     PyRun_SimpleString("import sys");
@@ -59,8 +59,19 @@ void Py::executePlugin(
     std::string path = tmppath.substr(0, pluginpath.find_first_of(":"));
 
     while (path.length() > 0) {
-        PyRun_SimpleString(("sys.path.append(\""+path+pluginname+"/\")").c_str());
-        PyRun_SimpleString(("sys.path.append(\""+path+"/\")").c_str());
+        {
+            std::lock_guard<std::mutex> lock(pathsAddedMutex);
+            std::string p1 = path+pluginname+"/";
+            if (pathsAdded.find(p1) == pathsAdded.end()) {
+                PyRun_SimpleString(("sys.path.append(\""+p1+"\")").c_str());
+                pathsAdded.insert(p1);
+            }
+            std::string p2 = path+"/";
+            if (pathsAdded.find(p2) == pathsAdded.end()) {
+                PyRun_SimpleString(("sys.path.append(\""+p2+"\")").c_str());
+                pathsAdded.insert(p2);
+            }
+        }
         tmppath = tmppath.substr(tmppath.find_first_of(":")+1, tmppath.length());
         path = tmppath.substr(0, tmppath.find_first_of(":"));
     }
@@ -75,7 +86,6 @@ void Py::executePlugin(
     PyRun_SimpleString(("plugin.output(\""+outputname+"\")").c_str());
     //Py_Finalize();
     PluginManager::getInstance().log("[PluMA] Python Plugin "+pluginname+" complted successfully.");
-    delete buffer;
 #endif
 }
 
